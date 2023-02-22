@@ -60,6 +60,7 @@ def goto_click(clickData):
     Input("selector", "value")
 )
 def filter_graph(selectorValues):
+    
     return px.scatter(df[df["loc"].isin(selectorValues or locations)], x="size", y="price", symbol="clicked", color="loc", hover_data=['url'])
 
 
