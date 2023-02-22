@@ -1,0 +1,138 @@
+import puppeteer, { ElementHandle } from "puppeteer";
+import fs from "fs/promises";
+import { Readable, Transform } from "stream";
+
+async function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function dataExtractionFromPage(elems: ElementHandle<HTMLDivElement>[]) {
+  const url = elems;
+
+  // Get info for each listing
+  // 0 -> div <rooms, (house / apt), size m3> div <region>
+  // 1 -> Desc
+  // 2 -> span <time since posted> div <price>
+  const info = (
+    await Promise.all(
+      elems.map(async (elem) => {
+        try {
+          const url = await elem.$eval("div > a", (e) => e.href);
+          const specs = await elem.$$(
+            "div > a > div > div:nth-child(3) > div > div > *"
+          );
+
+          return { url, specs };
+        } catch (e) {
+          return { url: "", specs: [] };
+        }
+      })
+    )
+  ).filter((e) => e.specs.length === 3);
+
+  const objects = await Promise.all(
+    info.map(async ({ specs, url }) => {
+      await specs[0].waitForSelector("> *");
+      await specs[2].waitForSelector("> div > span");
+
+      const obj = {
+        url,
+        desc: await specs[0].$$eval("> *", (divs) =>
+          divs.map((div) => div.innerHTML)
+        ),
+        price: await specs[2].$eval("> div > span", (elem) => elem.innerHTML),
+      };
+
+      await Promise.all(specs.map((e) => e.dispose()));
+
+      return obj;
+    })
+  );
+
+  return objects.map(({ desc, price, url }) => ({
+    url,
+    loc: desc[1].split("<!-- -->")[0],
+    rooms: Number.parseInt(desc[0].split(" ")[0]),
+    size: Number.parseFloat(desc[0].split(" ")[5]),
+    price_1k: Number.parseFloat(price.split("&")[0]),
+  }));
+}
+
+(async () => {
+  const browser = await puppeteer.launch({ headless: false });
+  const page = await browser.newPage();
+  //   await page.setViewport({ width: 1080, height: 1024 });
+  await page.goto(
+    "https://www.boligportal.dk/en/rental-apartments,rental-houses/k%C3%B8benhavn/?min_rental_period=12"
+  );
+
+  // Accept cookies
+  await page.waitForSelector(
+    "#coiPage-1 > div.coi-banner__page-footer > div > button.coi-banner__accept"
+  );
+  await page.click(
+    "#coiPage-1 > div.coi-banner__page-footer > div > button.coi-banner__accept"
+  );
+
+  const x = Readable.from(
+    (async function* getAllData() {
+      while (true) {
+        // Select all listings
+        await page.waitForSelector(
+          "#app > div:nth-child(3) > div:nth-child(1) > div > div > div:nth-child(2) > div:nth-child(9) > div > div"
+        );
+        const elems = await page.$$(
+          "#app > div:nth-child(3) > div:nth-child(1) > div > div > div:nth-child(2) > div:nth-child(9) > div > div"
+        );
+
+        const data = await dataExtractionFromPage(elems);
+        yield* data;
+
+        await Promise.all(elems.map((e) => e.dispose()));
+        const nextButton = await page.waitForSelector(
+          "#app > div:nth-child(3) > div:nth-child(1) > div > div > div:nth-child(2) > div:last-child > div > div > button:last-child"
+        );
+
+        if (!nextButton) {
+          throw new Error("No next button");
+        }
+
+        const isDisabled = await (
+          await nextButton.getProperty("disabled")
+        ).jsonValue();
+
+        if (isDisabled) {
+          break;
+        }
+
+        await Promise.all([
+          page.waitForNavigation({
+            waitUntil: "networkidle0",
+          }),
+          nextButton.click(),
+        ]);
+        await nextButton.dispose();
+      }
+    })()
+  );
+
+  //   const texts = await Promise.all(
+  //     names.map((elem) => elem?.$$eval("div", (el) => el.map((e) => e.innerHTML)))
+  //   );
+
+  await fs.writeFile(
+    "out.json",
+    x.pipe(
+      new Transform({
+        objectMode: true,
+        transform(chunk, encoding, callback) {
+          callback(null, JSON.stringify(chunk) + "\n");
+        },
+      })
+    )
+  );
+  await browser.close();
+  //   console.log(names);
+})();
