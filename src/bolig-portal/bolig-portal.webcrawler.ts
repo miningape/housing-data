@@ -31,14 +31,13 @@ export class BoligPortalWebCrawler implements WebCrawler {
         listingDetails.map((detail) => this.extractDataInListing(detail))
       );
 
-      const b = data.map(({ desc, price, url }) => ({
+      yield* data.map(({ desc, price, url }) => ({
         url,
         loc: desc[1].split("<!-- -->")[0],
         rooms: Number.parseInt(desc[0].split(" ")[0]),
         size: Number.parseFloat(desc[0].split(" ")[5]),
         price_1k: Number.parseFloat(price.split("&")[0]),
       }));
-      yield* b;
 
       await Promise.all(listings.map((e) => e.dispose()));
       await Promise.all(
