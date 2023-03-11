@@ -14,7 +14,7 @@ export class BoligPortalWebCrawler implements WebCrawler {
   private async *getHousingData(
     message: PipelineMessage<WebCrawlerPipelineMessage>
   ) {
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
 
     await page.goto(this.baseUrl + message.from.webcrawler.startUri);
@@ -31,13 +31,14 @@ export class BoligPortalWebCrawler implements WebCrawler {
         listingDetails.map((detail) => this.extractDataInListing(detail))
       );
 
-      yield* data.map(({ desc, price, url }) => ({
+      const b = data.map(({ desc, price, url }) => ({
         url,
         loc: desc[1].split("<!-- -->")[0],
         rooms: Number.parseInt(desc[0].split(" ")[0]),
         size: Number.parseFloat(desc[0].split(" ")[5]),
         price_1k: Number.parseFloat(price.split("&")[0]),
       }));
+      yield* b;
 
       await Promise.all(listings.map((e) => e.dispose()));
       await Promise.all(
@@ -57,6 +58,7 @@ export class BoligPortalWebCrawler implements WebCrawler {
       ).jsonValue();
 
       if (isDisabled) {
+        browser.close();
         break;
       }
 

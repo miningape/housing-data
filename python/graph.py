@@ -7,7 +7,7 @@ import json
 
 app = Dash(__name__)
 
-with open('out.json', 'r') as f:
+with open('out.nljson.dump', 'r') as f:
     df = pd.DataFrame([ {
         "price": obj["price_1k"] * 1000,
         "size": obj["size"],

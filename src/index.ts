@@ -44,7 +44,7 @@ start([
       },
     },
     to: {
-      file: "out.bin",
+      file: "out.nljson.dump",
     },
   },
 ]);
